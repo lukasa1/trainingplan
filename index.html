@@ -141,6 +141,9 @@
             font-size: 14px;
             font-weight: bold;
         }
+        .day-cell-logged {
+            border: 1px solid #10b981;
+        }
 
         .day-cell-today-label {
             position: absolute;
@@ -1351,6 +1354,33 @@
                 return workoutHistory.map(e => new Date(e.date).toDateString());
             }, [workoutHistory]);
 
+            const getLogForDate = (date) => {
+                return workoutHistory.find(e => new Date(e.date).toDateString() === date.toDateString());
+            };
+
+            const getLogSummary = (log) => {
+                if (!log) return null;
+                if (log.type === 'strength') {
+                    const lifts = log.details?.lifts;
+                    if (!lifts) return null;
+                    return Object.keys(lifts).map(l => l.split(' ')[0]).join('/');
+                }
+                if (log.type === 'tri') {
+                    const cardio = log.details?.cardio?.name || '';
+                    const hic = log.details?.hic;
+                    const hicLabel = hic?.skipped ? 'No HIC' : (hic?.name || '');
+                    return cardio + (hicLabel ? ' + ' + hicLabel.split(' ').slice(0, 2).join(' ') : '');
+                }
+                if (log.type === 'long') {
+                    return log.details?.cardio?.name || '';
+                }
+                return null;
+            };
+
+            const getSkipCount = () => {
+                return workoutHistory.filter(e => e.details?.hic?.skipped).length;
+            };
+
             useEffect(() => {
                 setTimeout(() => {
                     if (todayRef.current) {
@@ -1388,9 +1418,19 @@
 
             return (
                 <div className="page-content">
-                    <div className="stat-card">
-                        <h3>This Week</h3>
-                        <div className="stat-value">{getThisWeekCompleted()} / 7</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+                        <div className="stat-card">
+                            <h3>This Week</h3>
+                            <div className="stat-value">{getThisWeekCompleted()} / 6</div>
+                        </div>
+                        <div className="stat-card">
+                            <h3>Total Logged</h3>
+                            <div className="stat-value">{workoutHistory.length}</div>
+                        </div>
+                        <div className="stat-card">
+                            <h3>HICs Skipped</h3>
+                            <div className="stat-value">{getSkipCount()}</div>
+                        </div>
                     </div>
 
                     <div className="calendar-scroll" ref={calendarScrollRef}>
@@ -1417,8 +1457,11 @@
                                     <div className="px-4 py-2 grid grid-cols-7 gap-1">
                                         {monthDays.map((dayInfo, dayIdx) => {
                                             const workout = getWorkoutForDate(dayInfo.date, settings.block, settings.week);
-                                            const dayClass = `day-cell ${dayInfo.isCurrentMonth ? '' : 'day-cell-other-month'} day-cell-${workout.type} ${dayInfo.date.toDateString() === today.toDateString() ? 'today' : ''}`;
                                             const isLogged = loggedDateStrings.some(d => new Date(d).toDateString() === dayInfo.date.toDateString());
+                                            const log = isLogged ? getLogForDate(dayInfo.date) : null;
+                                            const logSummary = getLogSummary(log);
+                                            const hasSkippedHic = log?.details?.hic?.skipped;
+                                            const dayClass = `day-cell ${dayInfo.isCurrentMonth ? '' : 'day-cell-other-month'} day-cell-${workout.type} ${dayInfo.date.toDateString() === today.toDateString() ? 'today' : ''} ${isLogged ? 'day-cell-logged' : ''}`;
 
                                             return (
                                                 <div
@@ -1431,7 +1474,10 @@
                                                     )}
                                                     <div className="day-number">{dayInfo.date.getDate()}</div>
                                                     <div className="day-workout">{workout.short}</div>
-                                                    {isLogged && <div className="day-cell-checkmark">X</div>}
+                                                    {isLogged && <div className="day-cell-checkmark" style={hasSkippedHic ? { color: '#f59e0b' } : {}}>
+                                                        {hasSkippedHic ? '~' : 'X'}
+                                                    </div>}
+                                                    {logSummary && <div style={{ fontSize: '7px', lineHeight: '1.2', color: '#94a3b8', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{logSummary}</div>}
                                                 </div>
                                             );
                                         })}
@@ -1500,6 +1546,7 @@
             const [selectedCardio, setSelectedCardio] = useState(null);
             const [cardioMetrics, setCardioMetrics] = useState({});
             const [selectedHic, setSelectedHic] = useState(null);
+            const [skippedHic, setSkippedHic] = useState(false);
             const [liftData, setLiftData] = useState({});
             const [completedSets, setCompletedSets] = useState({});
             const [completedAccessorySets, setCompletedAccessorySets] = useState({});
@@ -1646,8 +1693,12 @@
                     setAccessoryData({});
                     setCompletedAccessorySets({});
                 } else if (todayWorkout.type === 'tri') {
-                    if (!selectedCardio || !selectedHic) {
-                        alert('Please select both a cardio workout and an HIC');
+                    if (!selectedCardio) {
+                        alert('Please select a cardio workout');
+                        return;
+                    }
+                    if (!selectedHic && !skippedHic) {
+                        alert('Please select an HIC or skip it');
                         return;
                     }
 
@@ -1657,7 +1708,7 @@
                         type: 'tri',
                         details: {
                             cardio: { name: selectedCardio, metrics: { ...cardioMetrics } },
-                            hic: { name: selectedHic, metrics: { ...hicMetrics } }
+                            hic: skippedHic ? { name: 'Skipped', skipped: true } : { name: selectedHic, metrics: { ...hicMetrics } }
                         }
                     };
 
@@ -1668,6 +1719,7 @@
                     setSelectedCardio(null);
                     setCardioMetrics({});
                     setSelectedHic(null);
+                    setSkippedHic(false);
                     setHicMetrics({});
                 } else if (todayWorkout.type === 'long') {
                     if (!selectedCardio) {
@@ -1979,34 +2031,53 @@
                                 )}
 
                                 <div className="hic-selector">
-                                    <h3 className="font-semibold mb-3 text-slate-200">Recommended HICs</h3>
-                                    <div className="hic-3card-grid">
-                                        {recommendedHics.map((hic, idx) => (
-                                            <div
-                                                key={idx}
-                                                className={`hic-smart-card ${selectedHic === hic.name ? 'selected' : ''}`}
-                                                onClick={() => {
-                                                    setSelectedHic(hic.name);
-                                                    setHicMetrics({});
-                                                }}
-                                            >
-                                                <div className="hic-smart-card-category">{hic.category}</div>
-                                                <div className="hic-smart-card-name">{hic.name}</div>
-                                                <div className="hic-smart-card-time">{hic.time}</div>
-                                                <div className="text-xs text-slate-300 mt-2 leading-relaxed">{hic.description}</div>
-                                            </div>
-                                        ))}
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h3 className="font-semibold text-slate-200">Recommended HICs</h3>
+                                        <button
+                                            className={`text-sm px-3 py-1 rounded border ${skippedHic ? 'bg-amber-600 border-amber-500 text-white' : 'border-slate-600 text-slate-400 hover:border-amber-500 hover:text-amber-400'}`}
+                                            onClick={() => {
+                                                setSkippedHic(!skippedHic);
+                                                if (!skippedHic) { setSelectedHic(null); setHicMetrics({}); }
+                                            }}
+                                        >
+                                            {skippedHic ? 'HIC Skipped' : 'Skip HIC'}
+                                        </button>
                                     </div>
+                                    {!skippedHic && (
+                                        <div className="hic-3card-grid">
+                                            {recommendedHics.map((hic, idx) => (
+                                                <div
+                                                    key={idx}
+                                                    className={`hic-smart-card ${selectedHic === hic.name ? 'selected' : ''}`}
+                                                    onClick={() => {
+                                                        setSelectedHic(hic.name);
+                                                        setSkippedHic(false);
+                                                        setHicMetrics({});
+                                                    }}
+                                                >
+                                                    <div className="hic-smart-card-category">{hic.category}</div>
+                                                    <div className="hic-smart-card-name">{hic.name}</div>
+                                                    <div className="hic-smart-card-time">{hic.time}</div>
+                                                    <div className="text-xs text-slate-300 mt-2 leading-relaxed">{hic.description}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {skippedHic && (
+                                        <div className="text-center py-6 text-slate-500 text-sm italic">HIC skipped for today</div>
+                                    )}
                                 </div>
 
-                                <button
-                                    className="hic-show-all-btn"
-                                    onClick={() => setShowAllHics(!showAllHics)}
-                                >
-                                    {showAllHics ? 'Hide All HICs' : 'Show All HICs'}
-                                </button>
+                                {!skippedHic && (
+                                    <button
+                                        className="hic-show-all-btn"
+                                        onClick={() => setShowAllHics(!showAllHics)}
+                                    >
+                                        {showAllHics ? 'Hide All HICs' : 'Show All HICs'}
+                                    </button>
+                                )}
 
-                                {showAllHics && (
+                                {!skippedHic && showAllHics && (
                                     <div className="hic-selector mb-4">
                                         <div className="hic-selector-list">
                                             {HIC_PRESETS.map((hic, idx) => (
@@ -2015,6 +2086,7 @@
                                                     className={`hic-option ${selectedHic === hic.name ? 'selected' : ''}`}
                                                     onClick={() => {
                                                         setSelectedHic(hic.name);
+                                                        setSkippedHic(false);
                                                         setHicMetrics({});
                                                         setShowAllHics(false);
                                                     }}
@@ -2027,7 +2099,7 @@
                                     </div>
                                 )}
 
-                                {selectedHic && (
+                                {!skippedHic && selectedHic && (
                                     <div className="hic-metrics">
                                         <h3 className="font-semibold mb-3 text-slate-200">{selectedHic} - Log Metrics</h3>
                                         {hicFields.map((field, idx) => (
@@ -2578,4 +2650,3 @@
     </script>
 </body>
 </html>
-<!-- v2.1 - 2026-03-03T23:25:08Z -->
