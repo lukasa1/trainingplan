@@ -1510,32 +1510,52 @@
                 return streak;
             }, [loggedDateStrings, today]);
 
-            const getCumulativeDistances = useCallback(() => {
-                const distances = { bike: 0, run: 0, swim: 0 };
+            const cumulativeDistanceData = useMemo(() => {
+                const now = new Date();
+                const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                const weekStart = new Date(now);
+                weekStart.setDate(now.getDate() - now.getDay());
+                weekStart.setHours(0, 0, 0, 0);
 
-                filteredHistory.forEach(entry => {
+                // Build per-day totals first
+                const dailyTotals = Array.from({ length: 7 }, () => ({ bike: 0, run: 0, swim: 0 }));
+
+                workoutHistory.forEach(entry => {
+                    const entryDate = new Date(entry.date);
+                    if (entryDate < weekStart) return;
+                    const dayIdx = entryDate.getDay();
                     if (entry.details?.cardio?.metrics) {
                         const cardioName = entry.details.cardio.name.toLowerCase();
                         const metrics = entry.details.cardio.metrics;
-
                         if (cardioName.includes('bike') && metrics.distance) {
-                            distances.bike += parseFloat(metrics.distance) || 0;
+                            dailyTotals[dayIdx].bike += parseFloat(metrics.distance) || 0;
                         } else if (cardioName.includes('run') && metrics.distance) {
-                            distances.run += parseFloat(metrics.distance) || 0;
+                            dailyTotals[dayIdx].run += parseFloat(metrics.distance) || 0;
                         } else if (cardioName.includes('swim')) {
-                            distances.swim += parseFloat(metrics.totalDistance) || 0;
+                            dailyTotals[dayIdx].swim += parseFloat(metrics.totalDistance) || 0;
                         }
                     }
                 });
 
-                return distances;
-            }, [filteredHistory]);
+                // Build cumulative arrays
+                const cumulative = Array.from({ length: 7 }, (_, i) => ({
+                    day: dayLabels[i],
+                    dayIdx: i,
+                    bike: 0, run: 0, swim: 0
+                }));
 
-            const distances = useMemo(() => {
-                const d = getCumulativeDistances();
-                return { bike: Number(d.bike) || 0, run: Number(d.run) || 0, swim: Number(d.swim) || 0 };
-            }, [getCumulativeDistances]);
-            const maxDistance = Math.max(distances.bike, distances.run, distances.swim, 1);
+                cumulative[0].bike = dailyTotals[0].bike;
+                cumulative[0].run = dailyTotals[0].run;
+                cumulative[0].swim = dailyTotals[0].swim;
+
+                for (let i = 1; i < 7; i++) {
+                    cumulative[i].bike = cumulative[i - 1].bike + dailyTotals[i].bike;
+                    cumulative[i].run = cumulative[i - 1].run + dailyTotals[i].run;
+                    cumulative[i].swim = cumulative[i - 1].swim + dailyTotals[i].swim;
+                }
+
+                return cumulative;
+            }, [workoutHistory]);
 
             useEffect(() => {
                 setTimeout(() => {
@@ -1674,32 +1694,74 @@
                         </div>
                     </div>
 
-                    <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#1a1a1a', borderRadius: '8px' }}>
-                        <h3 style={{ marginBottom: '12px', color: '#e2e8f0', fontSize: '14px', fontWeight: '600' }}>Cumulative Distance</h3>
-                        <div style={{ marginBottom: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                <div style={{ width: '36px', color: '#3b82f6', fontWeight: '600', fontSize: '12px' }}>Bike</div>
-                                <div style={{ flex: 1, height: '8px', backgroundColor: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', backgroundColor: '#3b82f6', borderRadius: '4px', width: maxDistance > 0 ? ((distances.bike / maxDistance) * 100) + '%' : '0%' }}></div>
+                    {(() => {
+                        const W = 320, H = 180, padL = 40, padR = 16, padT = 10, padB = 28;
+                        const chartW = W - padL - padR;
+                        const chartH = H - padT - padB;
+                        const data = cumulativeDistanceData;
+                        const todayIdx = today.getDay();
+
+                        // Separate maxes: miles for bike/run, yards for swim
+                        const maxMiles = Math.max(...data.map(d => Math.max(d.bike, d.run)), 0.1);
+                        const maxYards = Math.max(...data.map(d => d.swim), 1);
+
+                        const xFor = (i) => padL + (i / 6) * chartW;
+                        const yForMi = (v) => padT + chartH - (v / maxMiles) * chartH;
+                        const yForYd = (v) => padT + chartH - (v / maxYards) * chartH;
+
+                        const makeLine = (key, color, yFn) => {
+                            const pts = data.slice(0, todayIdx + 1).map((d, i) => `${xFor(i).toFixed(1)},${yFn(d[key]).toFixed(1)}`);
+                            return pts.length > 1 ? pts.join(' ') : null;
+                        };
+
+                        const bikeLine = makeLine('bike', '#3b82f6', yForMi);
+                        const runLine = makeLine('run', '#10b981', yForMi);
+                        const swimLine = makeLine('swim', '#8b5cf6', yForYd);
+
+                        const lastBike = data[todayIdx]?.bike || 0;
+                        const lastRun = data[todayIdx]?.run || 0;
+                        const lastSwim = data[todayIdx]?.swim || 0;
+
+                        return (
+                            <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#1a1a1a', borderRadius: '8px' }}>
+                                <h3 style={{ marginBottom: '8px', color: '#e2e8f0', fontSize: '14px', fontWeight: '600' }}>Weekly Cumulative Distance</h3>
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: '8px', fontSize: '11px' }}>
+                                    <span style={{ color: '#3b82f6' }}>● Bike {lastBike.toFixed(1)} mi</span>
+                                    <span style={{ color: '#10b981' }}>● Run {lastRun.toFixed(1)} mi</span>
+                                    <span style={{ color: '#8b5cf6' }}>● Swim {lastSwim.toFixed(0)} yds</span>
                                 </div>
-                                <div style={{ color: '#94a3b8', fontSize: '12px', minWidth: '55px', textAlign: 'right' }}>{distances.bike.toFixed(1)} mi</div>
+                                <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', maxWidth: '400px', display: 'block', margin: '0 auto' }}>
+                                    {/* Grid lines */}
+                                    {[0, 0.25, 0.5, 0.75, 1].map(f => (
+                                        <line key={f} x1={padL} x2={W - padR} y1={padT + chartH * (1 - f)} y2={padT + chartH * (1 - f)} stroke="#334155" strokeWidth="0.5" />
+                                    ))}
+                                    {/* Y axis labels - left (miles) */}
+                                    {[0, 0.5, 1].map(f => (
+                                        <text key={`yl${f}`} x={padL - 4} y={padT + chartH * (1 - f) + 3} fill="#64748b" fontSize="9" textAnchor="end">{(maxMiles * f).toFixed(1)}</text>
+                                    ))}
+                                    {/* Y axis labels - right (yards) */}
+                                    {[0, 0.5, 1].map(f => (
+                                        <text key={`yr${f}`} x={W - padR + 4} y={padT + chartH * (1 - f) + 3} fill="#8b5cf6" fontSize="9" textAnchor="start">{Math.round(maxYards * f)}</text>
+                                    ))}
+                                    {/* X axis day labels */}
+                                    {data.map((d, i) => (
+                                        <text key={d.day} x={xFor(i)} y={H - 4} fill={i === todayIdx ? '#e2e8f0' : '#64748b'} fontSize="10" textAnchor="middle" fontWeight={i === todayIdx ? '700' : '400'}>{d.day}</text>
+                                    ))}
+                                    {/* Today marker */}
+                                    <line x1={xFor(todayIdx)} x2={xFor(todayIdx)} y1={padT} y2={padT + chartH} stroke="#475569" strokeWidth="0.5" strokeDasharray="3,3" />
+                                    {/* Lines */}
+                                    {bikeLine && <polyline points={bikeLine} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+                                    {runLine && <polyline points={runLine} fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+                                    {swimLine && <polyline points={swimLine} fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4,2" />}
+                                    {/* Dots on today */}
+                                    {lastBike > 0 && <circle cx={xFor(todayIdx)} cy={yForMi(lastBike)} r="3" fill="#3b82f6" />}
+                                    {lastRun > 0 && <circle cx={xFor(todayIdx)} cy={yForMi(lastRun)} r="3" fill="#10b981" />}
+                                    {lastSwim > 0 && <circle cx={xFor(todayIdx)} cy={yForYd(lastSwim)} r="3" fill="#8b5cf6" />}
+                                </svg>
+                                <div style={{ textAlign: 'center', fontSize: '9px', color: '#475569', marginTop: '4px' }}>mi (left axis) · yds (right axis)</div>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                <div style={{ width: '36px', color: '#10b981', fontWeight: '600', fontSize: '12px' }}>Run</div>
-                                <div style={{ flex: 1, height: '8px', backgroundColor: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', backgroundColor: '#10b981', borderRadius: '4px', width: maxDistance > 0 ? ((distances.run / maxDistance) * 100) + '%' : '0%' }}></div>
-                                </div>
-                                <div style={{ color: '#94a3b8', fontSize: '12px', minWidth: '55px', textAlign: 'right' }}>{distances.run.toFixed(1)} mi</div>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <div style={{ width: '36px', color: '#8b5cf6', fontWeight: '600', fontSize: '12px' }}>Swim</div>
-                                <div style={{ flex: 1, height: '8px', backgroundColor: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', backgroundColor: '#8b5cf6', borderRadius: '4px', width: maxDistance > 0 ? ((distances.swim / maxDistance) * 100) + '%' : '0%' }}></div>
-                                </div>
-                                <div style={{ color: '#94a3b8', fontSize: '12px', minWidth: '55px', textAlign: 'right' }}>{distances.swim.toFixed(0)} yds</div>
-                            </div>
-                        </div>
-                    </div>
+                        );
+                    })()}
 
                     <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#1a1a1a', borderRadius: '8px' }}>
                         <h3 style={{ marginBottom: '12px', color: '#e2e8f0', fontSize: '14px', fontWeight: '600' }}>This Month</h3>
