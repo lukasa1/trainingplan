@@ -1986,6 +1986,34 @@
                 }
             }, [todayWorkout.type, todayWorkout.name]);
 
+            // Auto-fill accessory weights from last logged session
+            useEffect(() => {
+                if (todayWorkout.type === 'strength' && todayWorkout.accessories) {
+                    const accs = ACCESSORIES[todayWorkout.accessories] || [];
+                    const prefill = {};
+                    let hasData = false;
+                    accs.forEach(acc => {
+                        for (let i = workoutHistory.length - 1; i >= 0; i--) {
+                            const entry = workoutHistory[i];
+                            if (entry.details?.accessories) {
+                                const found = entry.details.accessories.find(a => a.name === acc.name);
+                                if (found && found.weight) {
+                                    prefill[`${acc.name}-weight`] = found.weight.toString();
+                                    hasData = true;
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                    if (hasData) setAccessoryData(prev => {
+                        // Only prefill keys that aren't already set by user
+                        const merged = { ...prefill };
+                        Object.keys(prev).forEach(k => { if (prev[k]) merged[k] = prev[k]; });
+                        return merged;
+                    });
+                }
+            }, [todayWorkout.accessories]);
+
             const handleSetToggle = (liftName, setNum) => {
                 const key = `${liftName}-${setNum}`;
                 setCompletedSets(prev => ({
@@ -2955,7 +2983,15 @@
                 localStorage.setItem('trainingAppSettings', JSON.stringify(settings));
             }, [settings]);
 
+            const historyInitialized = useRef(false);
             useEffect(() => {
+                // Guard: never overwrite existing history with empty array
+                // This prevents crash-remount from wiping saved data
+                if (workoutHistory.length === 0 && !historyInitialized.current) {
+                    historyInitialized.current = true;
+                    return;
+                }
+                historyInitialized.current = true;
                 localStorage.setItem('trainingAppHistory', JSON.stringify(workoutHistory));
             }, [workoutHistory]);
 
