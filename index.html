@@ -1821,19 +1821,23 @@
                                 // Build logged summary if available
                                 let logLabel = null;
                                 if (log) {
-                                    const parts = [];
-                                    if (log.details?.cardio?.name) {
-                                        const cn = log.details.cardio.name.toLowerCase();
-                                        if (cn.includes('swim')) parts.push('Swim');
-                                        else if (cn.includes('bike')) parts.push('Bike');
-                                        else if (cn.includes('run')) parts.push('Run');
-                                        else parts.push(log.details.cardio.name.split(' ')[0]);
+                                    if (log.type === 'strength') {
+                                        // Use the planned summary (e.g. "Chest + Abs") since it's more descriptive
+                                        logLabel = null; // fall through to show plan label
+                                    } else {
+                                        const parts = [];
+                                        if (log.details?.cardio?.name) {
+                                            const cn = log.details.cardio.name.toLowerCase();
+                                            if (cn.includes('swim')) parts.push('Swim');
+                                            else if (cn.includes('bike')) parts.push('Bike');
+                                            else if (cn.includes('run')) parts.push('Run');
+                                            else parts.push(log.details.cardio.name.split(' ')[0]);
+                                        }
+                                        if (log.details?.hic) {
+                                            parts.push(log.details.hic.skipped ? '—' : 'HIC');
+                                        }
+                                        logLabel = parts.join('+');
                                     }
-                                    if (log.details?.hic) {
-                                        parts.push(log.details.hic.skipped ? '—' : 'HIC');
-                                    }
-                                    if (log.type === 'strength') parts.push('STR');
-                                    logLabel = parts.join('+');
                                 }
 
                                 return (
