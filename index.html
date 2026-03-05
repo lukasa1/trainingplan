@@ -1411,15 +1411,29 @@
                 const points = {};
 
                 history.forEach(entry => {
-                    if (entry.type === 'strength' && entry.details?.lifts) {
-                        Object.keys(entry.details.lifts).forEach(liftName => {
-                            const mapping = exerciseMuscleMap[liftName];
-                            if (mapping) {
-                                Object.entries(mapping).forEach(([muscle, pts]) => {
-                                    points[muscle] = (points[muscle] || 0) + pts;
-                                });
-                            }
-                        });
+                    if (entry.type === 'strength') {
+                        // Lifts are stored as array of { name, weight, ... }
+                        if (Array.isArray(entry.details?.lifts)) {
+                            entry.details.lifts.forEach(lift => {
+                                const mapping = exerciseMuscleMap[lift.name];
+                                if (mapping) {
+                                    Object.entries(mapping).forEach(([muscle, pts]) => {
+                                        points[muscle] = (points[muscle] || 0) + pts;
+                                    });
+                                }
+                            });
+                        }
+                        // Accessories are also array of { name, weight, ... }
+                        if (Array.isArray(entry.details?.accessories)) {
+                            entry.details.accessories.forEach(acc => {
+                                const mapping = exerciseMuscleMap[acc.name];
+                                if (mapping) {
+                                    Object.entries(mapping).forEach(([muscle, pts]) => {
+                                        points[muscle] = (points[muscle] || 0) + pts;
+                                    });
+                                }
+                            });
+                        }
                     } else if (entry.type === 'tri') {
                         if (entry.details?.cardio?.name) {
                             const cardioName = entry.details.cardio.name.toLowerCase();
